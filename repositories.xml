@@ -1,0 +1,22 @@
+<!DOCTYPE repositories SYSTEM "/dtd/repositories.dtd">
+<repositories xmlns="" version="1.0">
+<repo quality="experimental" status="unofficial">
+<name>
+<![CDATA[mate-overlay]]>
+</name>
+<description>
+<![CDATA[Gentoo custom Mate overlay]]>
+</description>
+<homepage>
+https://github.com/soka1578/mate-overlay
+</homepage>
+<owner>
+<email>
+soka1578@github.com
+</email>
+</owner>
+<source type="git">
+https://github.com/soka1578/mate-overlay.git
+</source>
+</repo>
+</repositories>
