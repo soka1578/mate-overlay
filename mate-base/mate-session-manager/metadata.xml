@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "http://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+<maintainer>
+	<email>tomka@gentoo.org</email>
+	<name>Thomas Kahle</name>
+</maintainer>
+<use>
+	<flag name='pm-utils'>Installs the pm-utils hooks for suspend/resume and
+		requires <pkg>sys-power/pm-utils</pkg></flag>
+	<flag name 'sudo'> Installs the sudo hook for reboot/poweroff and requires <pkg>app-admin/sudo</pkg></flag>
+</use>
+</pkgmetadata>

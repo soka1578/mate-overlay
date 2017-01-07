@@ -1,0 +1,181 @@
+diff -urN b/configure.ac a/configure.ac
+--- b/configure.ac      2014-03-15 10:38:35.000000000 -0300
++++ a/configure.ac      2014-11-02 00:18:41.000000000 -0300
+@@ -148,6 +148,49 @@
+ AC_SUBST(HAVE_UPOWER)
+ 
+ dnl ====================================================================
++dnl PM-UTILS
++dnl ====================================================================
++
++AC_ARG_ENABLE(pm_utils,
++              AS_HELP_STRING([--enable-pmutils],
++              [Use pm-utils to suspend/hibernate]),
++              enable_pmutils=$enableval,
++              enable_pmutils=yes)
++if test "x$enable_pmutils" = "xyes"; then
++    PKG_CHECK_MODULES(PMUTILS, pm-utils, has_pmutils=yes, has_pmutils=no)
++
++    if test "x$has_pmutils" = "xyes"; then
++        AC_DEFINE(HAVE_PMUTILS, 1, [pm-utils support])
++        AC_SUBST(PMUTILS_CFLAGS)
++        AC_SUBST(PMUTILS_LIBS)
++    fi
++fi
++AM_CONDITIONAL(HAVE_PMUTILS, test "x$has_pmutils" = "xyes")
++AC_SUBST(HAVE_PMUTILS)
++
++dnl ====================================================================
++dnl SUDO
++dnl ====================================================================
++
++AC_ARG_ENABLE(sudo,
++              AS_HELP_STRING([--enable-sudo],
++              [Use sudo to reboot/shutdown]),
++              enable_sudo=$enableval,
++              enable_sudo=yes)
++if test "x$enable_sudo" = "xyes"; then
++    AC_CHECK_PROG(SUDO, sudo, yes, no)
++
++    if test "x$SUDO" = "xyes"; then
++        AC_DEFINE(HAVE_SUDO, 1, [sudo support])
++        AC_SUBST(SUDO_CFLAGS)
++        AC_SUBST(SUDO_LIBS)
++    fi
++fi
++AM_CONDITIONAL(HAVE_SUDO, test "x$SUDO" = "xyes")
++AC_SUBST(HAVE_SUDO)
++
++
++dnl ====================================================================
+ dnl X development libraries check
+ dnl ====================================================================
+ 
+@@ -406,6 +449,8 @@
+         Default WM:               ${with_default_wm}
+         Systemd support:          ${use_systemd}
+         Upower support:           ${enable_upower}
++        Pm-utils support:         ${enable_pmutils}
++        Sudo support:             ${enable_sudo}
+         IPv6 support:             ${have_full_ipv6}
+         Backtrace support:        ${have_backtrace}
+         XRender support:          ${have_xrender}
+diff -urN b/mate-session/gsm-logout-dialog.c a/mate-session/gsm-logout-dialog.c
+--- b/mate-session/gsm-logout-dialog.c  2014-03-05 17:39:13.000000000 -0300
++++ a/mate-session/gsm-logout-dialog.c  2014-11-02 00:13:14.000000000 -0300
+@@ -207,6 +207,9 @@
+ {
+         gboolean ret;
+         ret = FALSE;
++#ifdef HAVE_PMUTILS
++        return TRUE;
++#endif
+ #ifdef HAVE_SYSTEMD
+         if (LOGIND_RUNNING())
+             ret = gsm_systemd_can_suspend (logout_dialog->priv->systemd);
+@@ -225,6 +228,9 @@
+ {
+         gboolean ret;
+         ret = FALSE;
++#ifdef HAVE_PMUTILS
++        return TRUE;
++#endif
+ #ifdef HAVE_SYSTEMD
+         if (LOGIND_RUNNING())
+             ret = gsm_systemd_can_hibernate (logout_dialog->priv->systemd);
+@@ -258,6 +264,9 @@
+ {
+         gboolean ret;
+ 
++#ifdef HAVE_SUDO
++        return TRUE;
++#endif
+ #ifdef HAVE_SYSTEMD
+         if (LOGIND_RUNNING())
+             ret = gsm_systemd_can_restart (logout_dialog->priv->systemd);
+@@ -276,6 +285,9 @@
+ {
+         gboolean ret;
+ 
++#ifdef HAVE_SUDO
++        return TRUE;
++#endif
+ #ifdef HAVE_SYSTEMD
+         if (LOGIND_RUNNING())
+             ret = gsm_systemd_can_stop (logout_dialog->priv->systemd);
+diff -urN b/mate-session/gsm-manager.c a/mate-session/gsm-manager.c
+--- b/mate-session/gsm-manager.c        2014-03-05 17:39:13.000000000 -0300
++++ a/mate-session/gsm-manager.c        2014-11-02 00:15:25.000000000 -0300
+@@ -463,6 +463,9 @@
+                 }
+                 else {
+                 #endif
++                #ifdef HAVE_SUDO
++                system("sudo reboot");        
++                #endif
+                 consolekit = gsm_get_consolekit ();
+                 g_signal_connect (consolekit,
+                                   "request-completed",
+@@ -492,6 +495,9 @@
+                 }
+                 else {
+                 #endif
++                #ifdef HAVE_SUDO
++                system("sudo poweroff");
++                #endif
+                 consolekit = gsm_get_consolekit ();
+                 g_signal_connect (consolekit,
+                                   "request-completed",
+@@ -1145,6 +1151,9 @@
+ static void
+ manager_attempt_hibernate (GsmManager *manager)
+ {
++#ifdef HAVE_PMUTILS
++system("sudo pm-hibernate");
++#endif
+ #ifdef HAVE_UPOWER
+         gboolean  can_hibernate;
+         GError   *error;
+@@ -1190,6 +1199,9 @@
+ static void
+ manager_attempt_suspend (GsmManager *manager)
+ {
++#ifdef HAVE_PMUTILS
++system("sudo pm-suspend");
++#endif
+ #ifdef HAVE_UPOWER
+         gboolean  can_suspend;
+         GError   *error;
+@@ -2856,6 +2868,10 @@
+         }
+         else {
+ #endif
++#ifdef HAVE_SUDO
++        manager->priv->logout_type = GSM_MANAGER_LOGOUT_REBOOT;
++        system("sudo reboot");
++#endif
+         consolekit = gsm_get_consolekit ();
+         g_signal_connect (consolekit,
+                           "privileges-completed",
+@@ -2968,6 +2984,10 @@
+         }
+         else {
+ #endif
++#ifdef HAVE_SUDO
++        manager->priv->logout_type = GSM_MANAGER_LOGOUT_SHUTDOWN;
++        system("sudo poweroff");
++#endif
+         consolekit = gsm_get_consolekit ();
+         g_signal_connect (consolekit,
+                           "privileges-completed",
+@@ -3277,6 +3297,10 @@
+                           gboolean   *shutdown_available,
+                           GError    **error)
+ {
++#ifdef HAVE_SUDO
++        *shutdown_available = TRUE;
++        return TRUE;
++#endif
+         GsmConsolekit *consolekit;
+ #ifdef HAVE_SYSTEMD
+         GsmSystemd *systemd;

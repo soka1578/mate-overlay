@@ -1,0 +1,509 @@
+diff -urN a/configure.ac b/configure.ac
+--- a/configure.ac	2015-11-28 15:08:46.000000000 -0300
++++ b/configure.ac	2016-07-30 15:19:48.376091000 -0300
+@@ -150,6 +150,49 @@
+ AC_SUBST(HAVE_UPOWER)
+ 
+ dnl ====================================================================
++dnl PM-UTILS
++dnl ====================================================================
++
++AC_ARG_ENABLE(pm_utils,
++              AS_HELP_STRING([--enable-pmutils],
++              [Use pm-utils to suspend/hibernate]),
++              enable_pmutils=$enableval,
++              enable_pmutils=yes)
++if test "x$enable_pmutils" = "xyes"; then
++    PKG_CHECK_MODULES(PMUTILS, pm-utils, has_pmutils=yes, has_pmutils=no)
++
++    if test "x$has_pmutils" = "xyes"; then
++        AC_DEFINE(HAVE_PMUTILS, 1, [pm-utils support])
++        AC_SUBST(PMUTILS_CFLAGS)
++        AC_SUBST(PMUTILS_LIBS)
++    fi
++fi
++AM_CONDITIONAL(HAVE_PMUTILS, test "x$has_pmutils" = "xyes")
++AC_SUBST(HAVE_PMUTILS)
++
++dnl ====================================================================
++dnl SUDO
++dnl ====================================================================
++
++AC_ARG_ENABLE(sudo,
++              AS_HELP_STRING([--enable-sudo],
++              [Use sudo to reboot/shutdown]),
++              enable_sudo=$enableval,
++              enable_sudo=yes)
++if test "x$enable_sudo" = "xyes"; then
++    AC_CHECK_PROG(SUDO, sudo, yes, no)
++
++    if test "x$SUDO" = "xyes"; then
++        AC_DEFINE(HAVE_SUDO, 1, [sudo support])
++        AC_SUBST(SUDO_CFLAGS)
++        AC_SUBST(SUDO_LIBS)
++    fi
++fi
++AM_CONDITIONAL(HAVE_SUDO, test "x$SUDO" = "xyes")
++AC_SUBST(HAVE_SUDO)
++
++
++dnl ====================================================================
+ dnl Check for XSync extension
+ dnl ====================================================================
+ 
+@@ -370,6 +413,8 @@
+         Default WM:               ${with_default_wm}
+         Systemd support:          ${use_systemd}
+         Upower support:           ${enable_upower}
++        Pm-utils support:         ${enable_pmutils}
++        Sudo support:             ${enable_sudo}
+         IPv6 support:             ${have_full_ipv6}
+         Backtrace support:        ${have_backtrace}
+         XRender support:          ${have_xrender}
+diff -urN a/mate-session/gsm-logout-dialog.c b/mate-session/gsm-logout-dialog.c
+--- a/mate-session/gsm-logout-dialog.c	2015-10-06 12:27:38.000000000 -0300
++++ b/mate-session/gsm-logout-dialog.c	2016-07-30 15:15:48.746626000 -0300
+@@ -35,7 +35,6 @@
+ #ifdef HAVE_SYSTEMD
+ #include "gsm-systemd.h"
+ #endif
+-#include "gsm-consolekit.h"
+ #include "mdm.h"
+ 
+ #define GSM_LOGOUT_DIALOG_GET_PRIVATE(o)                                \
+@@ -64,8 +63,6 @@
+ #ifdef HAVE_SYSTEMD
+         GsmSystemd          *systemd;
+ #endif
+-        GsmConsolekit       *consolekit;
+-
+         GtkWidget           *progressbar;
+ 
+         int                  timeout;
+@@ -164,8 +161,6 @@
+             logout_dialog->priv->systemd = gsm_get_systemd ();
+         else
+ #endif
+-        logout_dialog->priv->consolekit = gsm_get_consolekit ();
+-
+         g_signal_connect (logout_dialog,
+                           "destroy",
+                           G_CALLBACK (gsm_logout_dialog_destroy),
+@@ -198,11 +193,6 @@
+         }
+ #endif
+ 
+-        if (logout_dialog->priv->consolekit) {
+-                g_object_unref (logout_dialog->priv->consolekit);
+-                logout_dialog->priv->consolekit = NULL;
+-        }
+-
+         current_dialog = NULL;
+ }
+ 
+@@ -211,6 +201,9 @@
+ {
+         gboolean ret;
+         ret = FALSE;
++#ifdef HAVE_PMUTILS
++        return TRUE;
++#endif
+ #ifdef HAVE_SYSTEMD
+         if (LOGIND_RUNNING())
+             ret = gsm_systemd_can_suspend (logout_dialog->priv->systemd);
+@@ -229,6 +222,9 @@
+ {
+         gboolean ret;
+         ret = FALSE;
++#ifdef HAVE_PMUTILS
++        return TRUE;
++#endif
+ #ifdef HAVE_SYSTEMD
+         if (LOGIND_RUNNING())
+             ret = gsm_systemd_can_hibernate (logout_dialog->priv->systemd);
+@@ -260,7 +256,6 @@
+                 ret = gsm_systemd_can_switch_user (logout_dialog->priv->systemd);
+             else
+ #endif
+-            ret = gsm_consolekit_can_switch_user (logout_dialog->priv->consolekit);
+         }
+ 
+         return ret;
+@@ -270,13 +265,14 @@
+ gsm_logout_supports_reboot (GsmLogoutDialog *logout_dialog)
+ {
+         gboolean ret;
+-
++#ifdef HAVE_SUDO
++        return TRUE;
++#endif
+ #ifdef HAVE_SYSTEMD
+         if (LOGIND_RUNNING())
+             ret = gsm_systemd_can_restart (logout_dialog->priv->systemd);
+         else
+ #endif
+-        ret = gsm_consolekit_can_restart (logout_dialog->priv->consolekit);
+         if (!ret) {
+                 ret = mdm_supports_logout_action (MDM_LOGOUT_ACTION_REBOOT);
+         }
+@@ -289,13 +285,14 @@
+ {
+         gboolean ret;
+ 
++#ifdef HAVE_SUDO
++        return TRUE;
++#endif
+ #ifdef HAVE_SYSTEMD
+         if (LOGIND_RUNNING())
+             ret = gsm_systemd_can_stop (logout_dialog->priv->systemd);
+         else
+ #endif
+-        ret = gsm_consolekit_can_stop (logout_dialog->priv->consolekit);
+-
+         if (!ret) {
+                 ret = mdm_supports_logout_action (MDM_LOGOUT_ACTION_SHUTDOWN);
+         }
+@@ -360,11 +357,6 @@
+                 }
+                 else {
+ #endif
+-                GsmConsolekit *consolekit;
+-                consolekit = gsm_get_consolekit ();
+-                session_type = gsm_consolekit_get_current_session_type (consolekit);
+-                g_object_unref (consolekit);
+-                is_not_login = (g_strcmp0 (session_type, GSM_CONSOLEKIT_SESSION_TYPE_LOGIN_WINDOW) != 0);
+ #ifdef HAVE_SYSTEMD
+                 }
+ #endif
+diff -urN a/mate-session/gsm-manager.c b/mate-session/gsm-manager.c
+--- a/mate-session/gsm-manager.c	2015-11-28 15:07:23.000000000 -0300
++++ b/mate-session/gsm-manager.c	2016-07-30 15:06:05.190844000 -0300
+@@ -61,7 +61,6 @@
+ #include "mdm.h"
+ #include "gsm-logout-dialog.h"
+ #include "gsm-inhibit-dialog.h"
+-#include "gsm-consolekit.h"
+ #ifdef HAVE_SYSTEMD
+ #include "gsm-systemd.h"
+ #endif
+@@ -409,22 +408,6 @@
+ 
+ static void start_phase (GsmManager *manager);
+ 
+-static void
+-quit_request_completed_consolekit (GsmConsolekit *consolekit,
+-                                   GError        *error,
+-                                   gpointer       user_data)
+-{
+-        MdmLogoutAction fallback_action = GPOINTER_TO_INT (user_data);
+-
+-        if (error != NULL) {
+-                mdm_set_logout_action (fallback_action);
+-        }
+-
+-        g_object_unref (consolekit);
+-
+-        gtk_main_quit ();
+-}
+-
+ #ifdef HAVE_SYSTEMD
+ static void
+ quit_request_completed_systemd (GsmSystemd *systemd,
+@@ -446,7 +429,6 @@
+ static void
+ gsm_manager_quit (GsmManager *manager)
+ {
+-        GsmConsolekit *consolekit;
+ #ifdef HAVE_SYSTEMD
+         GsmSystemd *systemd;
+ #endif
+@@ -473,12 +455,9 @@
+                 }
+                 else {
+                 #endif
+-                consolekit = gsm_get_consolekit ();
+-                g_signal_connect (consolekit,
+-                                  "request-completed",
+-                                  G_CALLBACK (quit_request_completed_consolekit),
+-                                  GINT_TO_POINTER (MDM_LOGOUT_ACTION_REBOOT));
+-                gsm_consolekit_attempt_restart (consolekit);
++                #ifdef HAVE_SUDO
++                system("sudo reboot");        
++                #endif
+                 #ifdef HAVE_SYSTEMD
+                 }
+                 #endif
+@@ -502,12 +481,9 @@
+                 }
+                 else {
+                 #endif
+-                consolekit = gsm_get_consolekit ();
+-                g_signal_connect (consolekit,
+-                                  "request-completed",
+-                                  G_CALLBACK (quit_request_completed_consolekit),
+-                                  GINT_TO_POINTER (MDM_LOGOUT_ACTION_SHUTDOWN));
+-                gsm_consolekit_attempt_stop (consolekit);
++                #ifdef HAVE_SUDO
++                system("sudo poweroff");
++                #endif
+                 #ifdef HAVE_SYSTEMD
+                 }
+                 #endif
+@@ -1161,6 +1137,9 @@
+ static void
+ manager_attempt_hibernate (GsmManager *manager)
+ {
++#ifdef HAVE_PMUTILS
++system("sudo pm-hibernate");
++#endif
+ #ifdef HAVE_UPOWER
+         gboolean  can_hibernate;
+         GError   *error;
+@@ -1206,6 +1185,9 @@
+ static void
+ manager_attempt_suspend (GsmManager *manager)
+ {
++#ifdef HAVE_PMUTILS
++system("sudo pm-suspend");
++#endif
+ #ifdef HAVE_UPOWER
+         gboolean  can_suspend;
+         GError   *error;
+@@ -2057,7 +2039,6 @@
+ static void
+ maybe_save_session (GsmManager *manager)
+ {
+-        GsmConsolekit *consolekit = NULL;
+ #ifdef HAVE_SYSTEMD
+         GsmSystemd *systemd = NULL;
+ #endif
+@@ -2075,12 +2056,6 @@
+         }
+         else {
+ #endif
+-        consolekit = gsm_get_consolekit ();
+-        session_type = gsm_consolekit_get_current_session_type (consolekit);
+-
+-        if (g_strcmp0 (session_type, GSM_CONSOLEKIT_SESSION_TYPE_LOGIN_WINDOW) == 0) {
+-                goto out;
+-        }
+ #ifdef HAVE_SYSTEMD
+         }
+ #endif
+@@ -2101,8 +2076,6 @@
+         }
+ 
+ out:
+-        if (consolekit != NULL)
+-                g_object_unref (consolekit);
+ #ifdef HAVE_SYSTEMD
+         if (systemd != NULL)
+                 g_object_unref (systemd);
+@@ -2618,11 +2591,6 @@
+         }
+         else {
+ #endif
+-        GsmConsolekit *consolekit;
+-
+-        consolekit = gsm_get_consolekit ();
+-        gsm_consolekit_set_session_idle (consolekit,
+-                                         (status == GSM_PRESENCE_STATUS_IDLE));
+ #ifdef HAVE_SYSTEMD
+         }
+ #endif
+@@ -2805,33 +2773,6 @@
+         return TRUE;
+ }
+ 
+-static void
+-request_reboot_privileges_completed_consolekit (GsmConsolekit *consolekit,
+-                                                gboolean       success,
+-                                                gboolean       ask_later,
+-                                                GError        *error,
+-                                                GsmManager    *manager)
+-{
+-        /* make sure we disconnect the signal handler so that it's not called
+-         * again next time the event is fired -- this can happen if the reboot
+-         * is cancelled. */
+-        g_signal_handlers_disconnect_by_func (consolekit,
+-                                              request_reboot_privileges_completed_consolekit,
+-                                              manager);
+-
+-        g_object_unref (consolekit);
+-
+-        if (success) {
+-                if (ask_later) {
+-                        manager->priv->logout_type = GSM_MANAGER_LOGOUT_REBOOT_INTERACT;
+-                } else {
+-                        manager->priv->logout_type = GSM_MANAGER_LOGOUT_REBOOT;
+-                }
+-
+-                end_phase (manager);
+-        }
+-}
+-
+ #ifdef HAVE_SYSTEMD
+ static void
+ request_reboot_privileges_completed_systemd (GsmSystemd *systemd,
+@@ -2864,7 +2805,6 @@
+ static void
+ request_reboot (GsmManager *manager)
+ {
+-        GsmConsolekit *consolekit;
+ #ifdef HAVE_SYSTEMD
+         GsmSystemd *systemd;
+ #endif
+@@ -2915,19 +2855,11 @@
+         }
+         else {
+ #endif
+-        consolekit = gsm_get_consolekit ();
+-        g_signal_connect (consolekit,
+-                          "privileges-completed",
+-                          G_CALLBACK (request_reboot_privileges_completed_consolekit),
+-                          manager);
+-        success = gsm_consolekit_get_restart_privileges (consolekit);
+-
++#ifdef HAVE_SUDO
++        manager->priv->logout_type = GSM_MANAGER_LOGOUT_REBOOT;
++        system("sudo reboot");
++#endif
+         if (!success) {
+-                g_signal_handlers_disconnect_by_func (consolekit,
+-                                                      request_reboot_privileges_completed_consolekit,
+-                                                      manager);
+-                g_object_unref (consolekit);
+-
+                 manager->priv->logout_type = GSM_MANAGER_LOGOUT_REBOOT_MDM;
+                 end_phase (manager);
+         }
+@@ -2936,33 +2868,6 @@
+ #endif
+ }
+ 
+-static void
+-request_shutdown_privileges_completed_consolekit (GsmConsolekit *consolekit,
+-                                                  gboolean       success,
+-                                                  gboolean       ask_later,
+-                                                  GError        *error,
+-                                                  GsmManager    *manager)
+-{
+-        /* make sure we disconnect the signal handler so that it's not called
+-         * again next time the event is fired -- this can happen if the reboot
+-         * is cancelled. */
+-        g_signal_handlers_disconnect_by_func (consolekit,
+-                                              request_shutdown_privileges_completed_consolekit,
+-                                              manager);
+-
+-        g_object_unref (consolekit);
+-
+-        if (success) {
+-                if (ask_later) {
+-                        manager->priv->logout_type = GSM_MANAGER_LOGOUT_SHUTDOWN_INTERACT;
+-                } else {
+-                        manager->priv->logout_type = GSM_MANAGER_LOGOUT_SHUTDOWN;
+-                }
+-
+-                end_phase (manager);
+-        }
+-}
+-
+ #ifdef HAVE_SYSTEMD
+ static void
+ request_shutdown_privileges_completed_systemd (GsmSystemd *systemd,
+@@ -2995,7 +2900,6 @@
+ static void
+ request_shutdown (GsmManager *manager)
+ {
+-        GsmConsolekit *consolekit;
+ #ifdef HAVE_SYSTEMD
+         GsmSystemd *systemd;
+ #endif
+@@ -3027,19 +2931,11 @@
+         }
+         else {
+ #endif
+-        consolekit = gsm_get_consolekit ();
+-        g_signal_connect (consolekit,
+-                          "privileges-completed",
+-                          G_CALLBACK (request_shutdown_privileges_completed_consolekit),
+-                          manager);
+-        success = gsm_consolekit_get_stop_privileges (consolekit);
+-
++#ifdef HAVE_SUDO
++        manager->priv->logout_type = GSM_MANAGER_LOGOUT_SHUTDOWN;
++        system("sudo poweroff");
++#endif
+         if (!success) {
+-                g_signal_handlers_disconnect_by_func (consolekit,
+-                                                      request_shutdown_privileges_completed_consolekit,
+-                                                      manager);
+-                g_object_unref (consolekit);
+-
+                 manager->priv->logout_type = GSM_MANAGER_LOGOUT_SHUTDOWN_MDM;
+                 end_phase (manager);
+         }
+@@ -3379,7 +3275,10 @@
+                           gboolean   *shutdown_available,
+                           GError    **error)
+ {
+-        GsmConsolekit *consolekit;
++#ifdef HAVE_SUDO
++        *shutdown_available = TRUE;
++        return TRUE;
++#endif
+ #ifdef HAVE_SYSTEMD
+         GsmSystemd *systemd;
+ #endif
+@@ -3406,13 +3305,6 @@
+         }
+         else {
+ #endif
+-        consolekit = gsm_get_consolekit ();
+-        *shutdown_available = !_log_out_is_locked_down (manager) &&
+-	                      (gsm_consolekit_can_stop (consolekit)
+-                               || gsm_consolekit_can_restart (consolekit)
+-                               || can_suspend
+-                               || can_hibernate);
+-        g_object_unref (consolekit);
+ #ifdef HAVE_SYSTEMD
+         }
+ #endif
+diff -urN a/mate-session/main.c b/mate-session/main.c
+--- a/mate-session/main.c	2015-11-28 15:07:23.000000000 -0300
++++ b/mate-session/main.c	2016-07-30 15:22:38.031695000 -0300
+@@ -44,7 +44,6 @@
+ #include "mdm-signal-handler.h"
+ #include "mdm-log.h"
+ 
+-#include "gsm-consolekit.h"
+ #ifdef HAVE_SYSTEMD
+ #include "gsm-systemd.h"
+ #endif
+@@ -349,7 +348,6 @@
+ 
+ static void maybe_load_saved_session_apps(GsmManager* manager)
+ {
+-	GsmConsolekit* consolekit = NULL;
+ #ifdef HAVE_SYSTEMD
+ 	GsmSystemd* systemd = NULL;
+ #endif
+@@ -364,9 +362,6 @@
+ 	}
+ 	else {
+ #endif
+-	consolekit = gsm_get_consolekit();
+-	session_type = gsm_consolekit_get_current_session_type(consolekit);
+-	is_login = g_strcmp0 (session_type, GSM_CONSOLEKIT_SESSION_TYPE_LOGIN_WINDOW) == 0;
+ #ifdef HAVE_SYSTEMD
+ 	}
+ #endif
+@@ -384,8 +379,6 @@
+ 			gsm_manager_add_autostart_apps_from_dir(manager, gsm_util_get_saved_session_dir());
+ 	}
+ 
+-	if (consolekit != NULL)
+-		g_object_unref(consolekit);
+ #ifdef HAVE_SYSTEMD
+ 	if (systemd != NULL)
+ 		g_object_unref(systemd);

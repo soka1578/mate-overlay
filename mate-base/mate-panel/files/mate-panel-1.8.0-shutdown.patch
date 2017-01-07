@@ -1,0 +1,33 @@
+diff -urN b/mate-panel/libpanel-util/panel-session-manager.c a/mate-panel/libpanel-util/panel-session-manager.c
+--- b/mate-panel/libpanel-util/panel-session-manager.c	2014-11-02 00:29:39.404144901 -0300
++++ a/mate-panel/libpanel-util/panel-session-manager.c	2014-11-02 00:32:02.390519641 -0300
+@@ -146,7 +146,7 @@
+ {
+ 	GError *error;
+ 	DBusGProxy *proxy;
+-	gboolean is_shutdown_available;
++	gboolean is_shutdown_available = TRUE;
+ 
+ 	g_return_val_if_fail (PANEL_IS_SESSION_MANAGER (manager), FALSE);
+ 
+@@ -158,19 +158,6 @@
+ 			   error->message);
+ 		g_error_free (error);
+ 
+-		return FALSE;
+-	}
+-
+-	proxy = panel_dbus_service_get_proxy (PANEL_DBUS_SERVICE (manager));
+-
+-	if (!dbus_g_proxy_call (proxy, "CanShutdown", &error,
+-				G_TYPE_INVALID, G_TYPE_BOOLEAN,
+-				&is_shutdown_available, G_TYPE_INVALID) &&
+-	    error != NULL) {
+-		g_warning ("Could not ask session manager if shut down is available: %s",
+-			   error->message);
+-		g_error_free (error);
+-
+ 		return FALSE;
+ 	}
+ 
+
