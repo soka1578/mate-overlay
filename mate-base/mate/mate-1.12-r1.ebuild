@@ -21,7 +21,7 @@ HOMEPAGE="http://mate-desktop.org"
 LICENSE="metapackage"
 
 SLOT="0"
-IUSE="+base -bluetooth gtk3 help +notification +themes +extras"
+IUSE="+base -bluetooth gtk3 help +notification +themes +extras ss"
 
 S="${WORKDIR}"
 
@@ -62,6 +62,7 @@ RDEPEND="
 		gnome-extra/yelp:0
 		=mate-extra/mate-user-guide-${MATE_BRANCH}*:0
 	)
+    ss? ( =mate-extra/mate-screensaver-${MATE_BRANCH}*:0[gtk3(-)?] )
 "
 
 PDEPEND="
